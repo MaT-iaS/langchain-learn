@@ -1,0 +1,68 @@
+# Archivos y carpetas generados por Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pyc
+*.pyc
+
+# Archivos de entorno y configuración
+.env
+.venv/
+venv/
+env/
+.virtualenv/
+
+# Archivos de logs
+logs/
+*.log
+*.log.*
+
+# Archivos de caché y temporales
+*.tmp
+*.bak
+*.old
+
+# Archivos de dependencias (si usas pipenv o poetry)
+pip-log.txt
+pip-log.txt
+pip-log.txt
+
+# Archivos de compilación
+*.pyc
+*.pyd
+*.so
+
+# Archivos de configuración de IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*.swn
+
+# Archivos de pruebas
+test/
+coverage.xml
+
+# Archivos de caché de herramientas
+*.cache
+*.pytest_cache/
+
+# Archivos de sesión de IDE
+*.session
+*.session.lock
+
+# Archivos de configuración de herramientas
+*.DS_Store
+Thumbs.db
+
+# Archivos de build
+build/
+dist/
+*.egg-info/
+*.egg
+*.whl
+
+# Archivos de configuración de Docker
+.dockerignore
+.docker/
