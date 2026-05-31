@@ -14,7 +14,7 @@ PATHS = {
 }
 MODEL_CONFIG = {
     "DEFAULT_MODEL": "qwen3:4b-instruct",
-    "AVAILABLE_MODELS": ["qwen3:4b-instruct", "qwen2.5-coder:7b"],
+    "AVAILABLE_MODELS": ["qwen3:4b-instruct", " qwen3.5-9b", "qwen2.5-coder:7b"],
     "DEFAULT_TEMPERATURE": 0.7,
     "TEMPERATURE_RANGE": (0.0, 1.0),
     "TEMPERATURE_STEP": 0.1
@@ -29,7 +29,10 @@ UI_CONSTANTS = {
     "TEXT_AREA_HEIGHT": 400,
     "CHAT_INPUT_PLACEHOLDER": "Type your message here...",
     "SAVE_BUTTON_LABEL": "Save Chat History",
-    "CLEAR_BUTTON_LABEL": "Clear Chat History",
+    "CLEAR_BUTTON_LABEL": "Clear Chat History",    
+}
+SESSION_STATE_KEYS = {
+    "CHAT_SESSION_ID": "chat_session_id",
     "SYSTEM_PROMPT_KEY": "sys_prompt",
     "ROLE_SELECTION_KEY": "role_selection",
     "CHAT_HISTORY_KEY": "chat_history"
@@ -37,6 +40,39 @@ UI_CONSTANTS = {
 DEFAULT_VALUES = {
     "SYSTEM_PROMPT": "eres un poderoso asistente de IA, responde siempre de manera breve resumida y concreta, sin explicaciones adicionales, a menos que se te pida lo contrario."
 }
+
+## CALLBACKS for ui components
+def clear_chat_history():
+    st.session_state.pop(SESSION_STATE_KEYS["CHAT_HISTORY_KEY"], None)
+    st.session_state.pop(SESSION_STATE_KEYS["CHAT_SESSION_ID"], None)
+    
+def onchange_sys_prompt():
+    """Callback when system prompt changes."""
+    st.session_state[SESSION_STATE_KEYS["ROLE_SELECTION_KEY"]] = None
+    
+def save_chat_history():
+    """Save chat history to file."""
+    ensure_chat_saves_dir()
+    
+    sys_prompt = st.session_state.get(SESSION_STATE_KEYS["SYSTEM_PROMPT_KEY"], "")
+    chat_history = st.session_state.get(SESSION_STATE_KEYS["CHAT_HISTORY_KEY"], [])
+    
+    timestamp = st.session_state.get(SESSION_STATE_KEYS["CHAT_SESSION_ID"], str(pd.Timestamp.now().timestamp()))
+    filename = f"chat_history_{timestamp}.txt"
+    filepath = os.path.join(PATHS["CHAT_SAVES_DIR"], filename)
+    
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write(f"System Prompt:\n{sys_prompt}\n\n")
+        for msg in chat_history:
+            f.write(f"{msg.type}: {msg.content}\n")
+
+def on_reset_role_selection():
+    """Callback to reset role selection."""
+    st.session_state.update({SESSION_STATE_KEYS["ROLE_SELECTION_KEY"]: None})
+    st.session_state.update({SESSION_STATE_KEYS["SYSTEM_PROMPT_KEY"]: ""})
+    
+    
+## Helper functions
 def ensure_chat_saves_dir():
     """Ensure the chat saves directory exists."""
     Path(PATHS["CHAT_SAVES_DIR"]).mkdir(parents=True, exist_ok=True)
@@ -46,30 +82,41 @@ def load_roles():
 def format_role(role):
     """Format role for display in selectbox."""
     return f"{role['id']}: {role['name']}"
-def onchange_sys_prompt():
-    """Callback when system prompt changes."""
-    st.session_state[UI_CONSTANTS["ROLE_SELECTION_KEY"]] = None
+
 def init_session_state():
     """Initialize session state variables."""
-    if UI_CONSTANTS["CHAT_HISTORY_KEY"] not in st.session_state:
-        st.session_state[UI_CONSTANTS["CHAT_HISTORY_KEY"]] = []
-    if UI_CONSTANTS["ROLE_SELECTION_KEY"] not in st.session_state:
-        st.session_state[UI_CONSTANTS["ROLE_SELECTION_KEY"]] = None
-    if UI_CONSTANTS["SYSTEM_PROMPT_KEY"] not in st.session_state:
-        st.session_state[UI_CONSTANTS["SYSTEM_PROMPT_KEY"]] = DEFAULT_VALUES["SYSTEM_PROMPT"]
+    if SESSION_STATE_KEYS["CHAT_SESSION_ID"] not in st.session_state:
+        st.session_state[SESSION_STATE_KEYS["CHAT_SESSION_ID"]] = str(pd.Timestamp.now().timestamp())
+    if SESSION_STATE_KEYS["CHAT_HISTORY_KEY"] not in st.session_state:
+        st.session_state[SESSION_STATE_KEYS["CHAT_HISTORY_KEY"]] = []
+    if SESSION_STATE_KEYS["ROLE_SELECTION_KEY"] not in st.session_state:
+        st.session_state[SESSION_STATE_KEYS["ROLE_SELECTION_KEY"]] = None
+    # if SESSION_STATE_KEYS["SYSTEM_PROMPT_KEY"] not in st.session_state:
+    #     st.session_state[SESSION_STATE_KEYS["SYSTEM_PROMPT_KEY"]] = DEFAULT_VALUES["SYSTEM_PROMPT"]
 def generate_system_prompt(role_select):
     """Generate system prompt based on selected role."""
-    if not role_select or role_select["id"] == 0:
-        return DEFAULT_VALUES["SYSTEM_PROMPT"]
+    # if not role_select or role_select["id"] == 0:
+    #     return DEFAULT_VALUES["SYSTEM_PROMPT"]
+    columns = role_select.keys()
+    values = []
+    for col in columns:
+        if not pd.isna(role_select[col]) and role_select[col] != "":
+            values.append(role_select[col])
+        else:
+            values.append("")
+    headers = ["","","# Rol", "# Proposito", "# Habilidades", "# Output format"]
+    role_dict = dict(zip( values, headers))
+    result = ""
+    for value, header in role_dict.items():
+        if header == "" or (pd.isna(value) or value is None or value == ""):
+            continue
+        else:
+            result += f"{header}\n{value}\n\n"
+    return result.strip()
     
-    output_format = ""
-    if not pd.isna(role_select["output_format"]) and role_select["output_format"] != "":
-        output_format = f"\n\n# Output format:\n{role_select['output_format']}"
-    
-    return f"""# Rol\n {role_select['rol']} \n\n# Propósito\n {role_select['proposito']} \n\n# Habilidades\n {role_select['habilidades']} {output_format}"""
 def display_chat_history():
     """Display chat history messages."""
-    chat_history = st.session_state.get(UI_CONSTANTS["CHAT_HISTORY_KEY"], [])
+    chat_history = st.session_state.get(SESSION_STATE_KEYS["CHAT_HISTORY_KEY"], [])
     for msg in chat_history:
         with st.chat_message(msg.type):
             st.markdown(msg.content)
@@ -94,11 +141,11 @@ def handle_user_input(sys_txt, model_selected, temperature):
         ])
         
         # Format prompt with history and input
-        chat_history = st.session_state.get(UI_CONSTANTS["CHAT_HISTORY_KEY"], [])
+        chat_history = st.session_state.get(SESSION_STATE_KEYS["CHAT_HISTORY_KEY"], [])
         full_chat_prompt = chat_prompt.format(history=chat_history, input=user_input)
         
         # Initialize model and stream response
-        model = ChatOllama(model=model_selected, temperature=temperature)
+        model = ChatOllama(model=model_selected, temperature=temperature, reasoning=False)
         
         for s in model.stream(full_chat_prompt):
             full_response += s.content
@@ -108,22 +155,10 @@ def handle_user_input(sys_txt, model_selected, temperature):
         # Update chat history
         chat_history.append(HumanMessage(user_input))
         chat_history.append(AIMessage(full_response))
-        st.session_state[UI_CONSTANTS["CHAT_HISTORY_KEY"]] = chat_history
-def save_chat_history():
-    """Save chat history to file."""
-    ensure_chat_saves_dir()
-    
-    sys_prompt = st.session_state.get(UI_CONSTANTS["SYSTEM_PROMPT_KEY"], "")
-    chat_history = st.session_state.get(UI_CONSTANTS["CHAT_HISTORY_KEY"], [])
-    
-    timestamp = pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')
-    filename = f"chat_history_{timestamp}.txt"
-    filepath = os.path.join(PATHS["CHAT_SAVES_DIR"], filename)
-    
-    with open(filepath, "w", encoding="utf-8") as f:
-        f.write(f"System Prompt:\n{sys_prompt}\n\n")
-        for msg in chat_history:
-            f.write(f"{msg.type}: {msg.content}\n")
+        st.session_state[SESSION_STATE_KEYS["CHAT_HISTORY_KEY"]] = chat_history
+        save_chat_history()
+
+            
 def create_sidebar(roles):
     """Create and render sidebar with controls."""
     with st.sidebar:
@@ -150,28 +185,29 @@ def create_sidebar(roles):
             options=roles,
             format_func=format_role,
             index=0,
-            key=UI_CONSTANTS["ROLE_SELECTION_KEY"]
+            key=SESSION_STATE_KEYS["ROLE_SELECTION_KEY"]
         )
-        
+        st.button("Reset Role Selection", on_click=on_reset_role_selection, type="secondary", use_container_width=True)
+        sys_txt = ""
         # System prompt handling
-        if role_select and role_select["id"] != 0:
+        if role_select:
             # Generate prompt based on role
             sys_prompt = generate_system_prompt(role_select)
-            st.session_state[UI_CONSTANTS["SYSTEM_PROMPT_KEY"]] = sys_prompt
+            st.session_state[SESSION_STATE_KEYS["SYSTEM_PROMPT_KEY"]] = sys_prompt
             
             # Text area with generated prompt as default
             sys_txt = st.text_area(
                 "Enter system prompt:",
-                key=UI_CONSTANTS["SYSTEM_PROMPT_KEY"],
+                key=SESSION_STATE_KEYS["SYSTEM_PROMPT_KEY"],
                 on_change=onchange_sys_prompt,
-                value=st.session_state.get(UI_CONSTANTS["SYSTEM_PROMPT_KEY"], sys_prompt),
+                value=st.session_state.get(SESSION_STATE_KEYS["SYSTEM_PROMPT_KEY"], sys_prompt),
                 height=UI_CONSTANTS["TEXT_AREA_HEIGHT"]
             )
         else:
             # Text area for custom prompt
             sys_txt = st.text_area(
                 "Enter system prompt:",
-                key=UI_CONSTANTS["SYSTEM_PROMPT_KEY"],
+                key=SESSION_STATE_KEYS["SYSTEM_PROMPT_KEY"],
                 height=UI_CONSTANTS["TEXT_AREA_HEIGHT"],
                 on_change=onchange_sys_prompt
             )
@@ -189,7 +225,7 @@ def create_sidebar(roles):
             st.button(
                 UI_CONSTANTS["CLEAR_BUTTON_LABEL"],
                 key="clear_chat_history",
-                on_click=lambda: st.session_state.pop(UI_CONSTANTS["CHAT_HISTORY_KEY"], None),
+                on_click=clear_chat_history,
                 type="primary"
             )
         
