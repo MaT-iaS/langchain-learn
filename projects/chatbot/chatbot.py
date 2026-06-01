@@ -14,10 +14,11 @@ PATHS = {
 }
 MODEL_CONFIG = {
     "DEFAULT_MODEL": "qwen3:4b-instruct",
-    "AVAILABLE_MODELS": ["qwen3:4b-instruct", " qwen3.5-9b", "qwen2.5-coder:7b"],
+    "AVAILABLE_MODELS": ["qwen3:4b-instruct", " qwen3.5-9b"],
     "DEFAULT_TEMPERATURE": 0.7,
     "TEMPERATURE_RANGE": (0.0, 1.0),
-    "TEMPERATURE_STEP": 0.1
+    "TEMPERATURE_STEP": 0.1,
+    "CONTEXT_WINDOW_SIZE": 16384
 }
 UI_CONSTANTS = {
     "PAGE_TITLE": "Chatbot",
@@ -29,7 +30,7 @@ UI_CONSTANTS = {
     "TEXT_AREA_HEIGHT": 400,
     "CHAT_INPUT_PLACEHOLDER": "Type your message here...",
     "SAVE_BUTTON_LABEL": "Save Chat History",
-    "CLEAR_BUTTON_LABEL": "Clear Chat History",    
+    "CLEAR_BUTTON_LABEL": "New Chat",
 }
 SESSION_STATE_KEYS = {
     "CHAT_SESSION_ID": "chat_session_id",
@@ -38,8 +39,8 @@ SESSION_STATE_KEYS = {
     "CHAT_HISTORY_KEY": "chat_history",
     "REASONING_KEY": "reasoning_enabled"
 }
-DEFAULT_VALUES = {
-    "SYSTEM_PROMPT": "eres un poderoso asistente de IA, responde siempre de manera breve resumida y concreta, sin explicaciones adicionales, a menos que se te pida lo contrario."
+SYSTEM_VALUES = {
+    "CHUNK_SIZE_FOR_PRE_SAVE_HISTORY": 200
 }
 
 ## CALLBACKS for ui components
@@ -51,15 +52,15 @@ def onchange_sys_prompt():
     """Callback when system prompt changes."""
     st.session_state[SESSION_STATE_KEYS["ROLE_SELECTION_KEY"]] = None
     
-def save_chat_history():
+def save_chat_history(partial_history=None):
     """Save chat history to file."""
     ensure_chat_saves_dir()
     
     sys_prompt = st.session_state.get(SESSION_STATE_KEYS["SYSTEM_PROMPT_KEY"], "")
-    chat_history = st.session_state.get(SESSION_STATE_KEYS["CHAT_HISTORY_KEY"], [])
+    chat_history = partial_history if partial_history is not None else st.session_state.get(SESSION_STATE_KEYS["CHAT_HISTORY_KEY"], [])
     
     timestamp = st.session_state.get(SESSION_STATE_KEYS["CHAT_SESSION_ID"], str(pd.Timestamp.now().timestamp()))
-    filename = f"chat_history_{timestamp}.txt"
+    filename = f"chat_history_{timestamp}.md"
     filepath = os.path.join(PATHS["CHAT_SAVES_DIR"], filename)
     
     with open(filepath, "w", encoding="utf-8") as f:
@@ -94,12 +95,8 @@ def init_session_state():
         st.session_state[SESSION_STATE_KEYS["ROLE_SELECTION_KEY"]] = None
     if SESSION_STATE_KEYS["REASONING_KEY"] not in st.session_state:
         st.session_state[SESSION_STATE_KEYS["REASONING_KEY"]] = False
-    # if SESSION_STATE_KEYS["SYSTEM_PROMPT_KEY"] not in st.session_state:
-    #     st.session_state[SESSION_STATE_KEYS["SYSTEM_PROMPT_KEY"]] = DEFAULT_VALUES["SYSTEM_PROMPT"]
+        
 def generate_system_prompt(role_select):
-    """Generate system prompt based on selected role."""
-    # if not role_select or role_select["id"] == 0:
-    #     return DEFAULT_VALUES["SYSTEM_PROMPT"]
     columns = role_select.keys()
     values = []
     for col in columns:
@@ -153,11 +150,13 @@ def handle_user_input(sys_txt, model_selected, temperature, is_reasoning):
         full_chat_prompt = chat_prompt.format(history=chat_history, input=user_input)
         
         # Initialize model and stream response
-        model = ChatOllama(model=model_selected, temperature=temperature, reasoning=is_reasoning)
+        model = ChatOllama(model=model_selected, temperature=temperature, reasoning=is_reasoning, num_ctx=MODEL_CONFIG["CONTEXT_WINDOW_SIZE"])
         
+        count = 0
         for token in model.stream(full_chat_prompt):
+            count += 1
             block  = token.content_blocks[0] if token.content_blocks else None
-            print(block)
+
             if block and block["type"] == "reasoning":
                 reasoning += block["reasoning"]
             if block and block["type"] == "text":
@@ -165,10 +164,20 @@ def handle_user_input(sys_txt, model_selected, temperature, is_reasoning):
                 
             if reasoning:
                full_response =  f"""<div style="color: darkgray; font-size: 14px;">[Tinking]: {reasoning}</div>"""
-            if text:
+            if text and reasoning:
                 full_response += f"\n\n{text}"
+            elif text:
+                full_response = text
+            
+            if count >= SYSTEM_VALUES["CHUNK_SIZE_FOR_PRE_SAVE_HISTORY"]:
+                partial_history = []
+                partial_history.extend(chat_history)
+                partial_history.append(HumanMessage(user_input))
+                partial_history.append(AIMessage(full_response))
+                save_chat_history(partial_history)
+            
             #full_response += token.content
-            new_message.markdown(full_response + "▮", unsafe_allow_html=True)
+            new_message.markdown(full_response + "⋯", unsafe_allow_html=True)
         
         with m.chat_message("ai"):
             if reasoning:
