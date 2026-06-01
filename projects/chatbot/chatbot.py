@@ -35,7 +35,8 @@ SESSION_STATE_KEYS = {
     "CHAT_SESSION_ID": "chat_session_id",
     "SYSTEM_PROMPT_KEY": "sys_prompt",
     "ROLE_SELECTION_KEY": "role_selection",
-    "CHAT_HISTORY_KEY": "chat_history"
+    "CHAT_HISTORY_KEY": "chat_history",
+    "REASONING_KEY": "reasoning_enabled"
 }
 DEFAULT_VALUES = {
     "SYSTEM_PROMPT": "eres un poderoso asistente de IA, responde siempre de manera breve resumida y concreta, sin explicaciones adicionales, a menos que se te pida lo contrario."
@@ -91,6 +92,8 @@ def init_session_state():
         st.session_state[SESSION_STATE_KEYS["CHAT_HISTORY_KEY"]] = []
     if SESSION_STATE_KEYS["ROLE_SELECTION_KEY"] not in st.session_state:
         st.session_state[SESSION_STATE_KEYS["ROLE_SELECTION_KEY"]] = None
+    if SESSION_STATE_KEYS["REASONING_KEY"] not in st.session_state:
+        st.session_state[SESSION_STATE_KEYS["REASONING_KEY"]] = False
     # if SESSION_STATE_KEYS["SYSTEM_PROMPT_KEY"] not in st.session_state:
     #     st.session_state[SESSION_STATE_KEYS["SYSTEM_PROMPT_KEY"]] = DEFAULT_VALUES["SYSTEM_PROMPT"]
 def generate_system_prompt(role_select):
@@ -120,7 +123,7 @@ def display_chat_history():
     for msg in chat_history:
         with st.chat_message(msg.type):
             st.markdown(msg.content)
-def handle_user_input(sys_txt, model_selected, temperature):
+def handle_user_input(sys_txt, model_selected, temperature, is_reasoning):
     """Handle user input and generate AI response."""
     user_input = st.chat_input(UI_CONSTANTS["CHAT_INPUT_PLACEHOLDER"])
     
@@ -131,6 +134,11 @@ def handle_user_input(sys_txt, model_selected, temperature):
         
         # Generate AI response
         full_response = ""
+        text = ""
+        reasoning = ""
+        m = st.empty()
+        e = st.empty()
+        reasoning_message = st.empty()
         new_message = st.empty()
         
         # Create prompt template
@@ -145,12 +153,28 @@ def handle_user_input(sys_txt, model_selected, temperature):
         full_chat_prompt = chat_prompt.format(history=chat_history, input=user_input)
         
         # Initialize model and stream response
-        model = ChatOllama(model=model_selected, temperature=temperature, reasoning=False)
+        model = ChatOllama(model=model_selected, temperature=temperature, reasoning=is_reasoning)
         
-        for s in model.stream(full_chat_prompt):
-            full_response += s.content
-            new_message.markdown(full_response + "▮")
-        new_message.markdown(full_response)
+        for token in model.stream(full_chat_prompt):
+            block  = token.content_blocks[0] if token.content_blocks else None
+            print(block)
+            if block and block["type"] == "reasoning":
+                reasoning += block["reasoning"]
+            if block and block["type"] == "text":
+                text += block["text"]
+                
+            if reasoning:
+               full_response =  f"""<div style="color: darkgray; font-size: 14px;">[Tinking]: {reasoning}</div>"""
+            if text:
+                full_response += f"\n\n{text}"
+            #full_response += token.content
+            new_message.markdown(full_response + "▮", unsafe_allow_html=True)
+        
+        with m.chat_message("ai"):
+            if reasoning:
+                e.expander("Reasoning").markdown(reasoning)
+                #reasoning_message.markdown(f"[Think]: {reasoning}")
+            new_message.markdown(text)
         
         # Update chat history
         chat_history.append(HumanMessage(user_input))
@@ -164,13 +188,18 @@ def create_sidebar(roles):
     with st.sidebar:
         st.header(UI_CONSTANTS["SIDEBAR_HEADER"])
         
-        model_selected = st.selectbox(
-            "Select Model:",
-            options=[model for model in MODEL_CONFIG["AVAILABLE_MODELS"]],
-            index=0,
-            key="model_selection"
-        )
-          # Temperature slider
+        left, right = st.columns(2, gap="small",vertical_alignment="center",)
+        with left:
+            model_selected = st.selectbox(
+                "Select Model:",
+                options=[model for model in MODEL_CONFIG["AVAILABLE_MODELS"]],
+                index=0,
+                key="model_selection"
+            )
+        with right:
+            reasoning = st.checkbox("Reasoning", key="reasoning_checkbox", value=st.session_state.get(SESSION_STATE_KEYS["REASONING_KEY"], False))
+            
+        # Temperature slider
         temp = st.slider(
             "Temperature",
             min_value=MODEL_CONFIG["TEMPERATURE_RANGE"][0],
@@ -229,7 +258,7 @@ def create_sidebar(roles):
                 type="primary"
             )
         
-        return sys_txt, temp, model_selected
+        return sys_txt, temp, model_selected, reasoning
 def main():
     """Main application function."""
     # Page configuration
@@ -247,12 +276,12 @@ def main():
     roles = load_roles()
     
     # Create sidebar and get values
-    sys_txt, temperature, model_selected = create_sidebar(roles)
+    sys_txt, temperature, model_selected, reasoning = create_sidebar(roles)
     
     # Display chat history
     display_chat_history()
     
     # Handle user input
-    handle_user_input(sys_txt, model_selected, temperature)
+    handle_user_input(sys_txt, model_selected, temperature, reasoning)
 if __name__ == "__main__":
     main()
