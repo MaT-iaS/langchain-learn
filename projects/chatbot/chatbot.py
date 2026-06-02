@@ -97,22 +97,8 @@ def init_session_state():
         st.session_state[SESSION_STATE_KEYS["REASONING_KEY"]] = False
         
 def generate_system_prompt(role_select):
-    columns = role_select.keys()
-    values = []
-    for col in columns:
-        if not pd.isna(role_select[col]) and role_select[col] != "":
-            values.append(role_select[col])
-        else:
-            values.append("")
-    headers = ["","","# Rol", "# Proposito", "# Habilidades", "# Output format"]
-    role_dict = dict(zip( values, headers))
-    result = ""
-    for value, header in role_dict.items():
-        if header == "" or (pd.isna(value) or value is None or value == ""):
-            continue
-        else:
-            result += f"{header}\n{value}\n\n"
-    return result.strip()
+    return role_select["prompt"].strip().replace("\\n", "\n")
+
     
 def display_chat_history():
     """Display chat history messages."""
@@ -170,6 +156,7 @@ def handle_user_input(sys_txt, model_selected, temperature, is_reasoning):
                 full_response = text
             
             if count >= SYSTEM_VALUES["CHUNK_SIZE_FOR_PRE_SAVE_HISTORY"]:
+                count = 0
                 partial_history = []
                 partial_history.extend(chat_history)
                 partial_history.append(HumanMessage(user_input))
