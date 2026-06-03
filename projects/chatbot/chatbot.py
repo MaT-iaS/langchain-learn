@@ -18,7 +18,8 @@ MODEL_CONFIG = {
     "DEFAULT_TEMPERATURE": 0.7,
     "TEMPERATURE_RANGE": (0.0, 1.0),
     "TEMPERATURE_STEP": 0.1,
-    "CONTEXT_WINDOW_SIZE": 16384
+    "CONTEXT_WINDOW_SIZE": 16384,
+    "API_URL": st.secrets["API_URL"]
 }
 UI_CONSTANTS = {
     "PAGE_TITLE": "Chatbot",
@@ -136,7 +137,7 @@ def handle_user_input(sys_txt, model_selected, temperature, is_reasoning):
         full_chat_prompt = chat_prompt.format(history=chat_history, input=user_input)
         
         # Initialize model and stream response
-        model = ChatOllama(model=model_selected, temperature=temperature, reasoning=is_reasoning, num_ctx=MODEL_CONFIG["CONTEXT_WINDOW_SIZE"])
+        model = ChatOllama(base_url=MODEL_CONFIG["API_URL"], model=model_selected, temperature=temperature, reasoning=is_reasoning, num_ctx=MODEL_CONFIG["CONTEXT_WINDOW_SIZE"])
         
         count = 0
         for token in model.stream(full_chat_prompt):
@@ -254,7 +255,7 @@ def create_sidebar(roles):
                 type="primary"
             )
         
-        return sys_txt, temp, model_selected, reasoning
+        return sys_txt, round(temp, 2), model_selected, reasoning
 def main():
     """Main application function."""
     # Page configuration
